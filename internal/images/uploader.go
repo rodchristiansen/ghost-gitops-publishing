@@ -8,8 +8,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -41,6 +43,7 @@ func (s *Service) Rewrite(md []byte, root string) ([]byte, error) {
 
 		remote, err := s.upload(full)
 		if err != nil {
+			fmt.Printf("Error uploading file: %s\n", err.Error())
 			return m // keep local ref if upload fails
 		}
 		return bytes.Replace(m, match[1], []byte(remote), 1)
@@ -58,17 +61,21 @@ func (s *Service) upload(path string) (string, error) {
 	}
 
 	body := &bytes.Buffer{}
-	w := multipart.NewWriter(body)
-	part, _ := w.CreateFormFile("file", filepath.Base(path))
-	io.Copy(part, bytes.NewReader(raw))
+	w, err := imageFormWriter(raw, body, path)
+	if err != nil {
+		return "", err
+	}
 	w.Close()
 
 	req, _ := http.NewRequest("POST", s.BaseURL+"images/upload/", body)
 	req.Header.Set("Authorization", "Ghost "+s.AdminJWT)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	resp, err := s.Client.Do(req)
-	if err != nil || resp.StatusCode >= 300 {
+	if err != nil {
 		return "", fmt.Errorf("upload failed %v", err)
+	}
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("status code %d", resp.StatusCode)
 	}
 	// parse {"images":[{"url":"https://…"}]}
 	var r struct {
@@ -80,4 +87,18 @@ func (s *Service) upload(path string) (string, error) {
 	remote := r.Images[0].URL
 	s.cache[sum] = remote
 	return remote, nil
+}
+
+func imageFormWriter(file []byte, body *bytes.Buffer, path string) (*multipart.Writer, error) {
+	w := multipart.NewWriter(body)
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", multipart.FileContentDisposition("file", filepath.Base(path)))
+	h.Set("Content-Type", mime.TypeByExtension(filepath.Ext(path)))
+	part, _ := w.CreatePart(h)
+	_, err := io.Copy(part, bytes.NewReader(file))
+	if err != nil {
+		return nil, fmt.Errorf("error writing form: %s", err.Error())
+	}
+	w.WriteField("ref", path)
+	return w, nil
 }
