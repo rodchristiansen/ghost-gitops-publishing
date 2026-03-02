@@ -9,12 +9,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// version is set at build time via -ldflags "-X main.version=YYYY.MM.DD.HHMM"
+var version = "dev"
+
 var cfg *config.Config
 
 func main() {
 	root := &cobra.Command{
-		Use:   "ghostpost",
-		Short: "Git-first publishing to Ghost",
+		Use:     "ghostpost",
+		Short:   "Git-first publishing to Ghost",
+		Version: version,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			var err error
 			cfg, err = config.Load(cmd)

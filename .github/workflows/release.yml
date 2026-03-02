@@ -2,31 +2,33 @@ name: release
 
 on:
   push:
-    tags: ["[0-9][0-9][0-9][0-9].*"]   # date-based tags: YYYY.MM.DD.HHMM
-  workflow_dispatch:                     # manual: creates + pushes a dated tag
+    branches: ["main"]   # auto-release on every merge to main
 
 permissions:
-  contents: write  # needed for tagging and uploading release assets
+  contents: write  # needed for creating tags and uploading release assets
 
 jobs:
   tag:
-    # Only runs on manual dispatch — creates YYYY.MM.DD.HHMM tag and exits.
-    # The resulting tag push re-triggers this workflow, skipping this job.
-    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.gen.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Create and push dated tag
+      - name: Generate date-based version tag
+        id: gen
         run: |
-          TAG=$(date -u +"%Y.%m.%d.%H%M")
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          git tag "$TAG"
-          git push origin "$TAG"
+          VERSION=$(date -u +"%Y.%m.%d.%H%M")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
 
   build:
-    if: github.event_name == 'push'
+    needs: tag
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -72,10 +74,11 @@ jobs:
           GOOS:   ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          VERSION="${{ needs.tag.outputs.version }}"
           out="ghostpost${{ matrix.ext }}"
           dir="ghostpost-${GOOS}-${GOARCH}"
           mkdir -p "$dir"
-          go build -ldflags="-s -w" -o "$dir/$out" ./cmd/ghostpost
+          go build -ldflags="-s -w -X main.version=${VERSION}" -o "$dir/$out" ./cmd/ghostpost
           # compress
           if [ "${{ matrix.archive }}" = "zip" ]; then
             zip -r "${dir}.zip" "$dir"
@@ -90,8 +93,7 @@ jobs:
           path: ghostpost-${{ matrix.goos }}-${{ matrix.goarch }}*.${{ matrix.archive }}
 
   release:
-    needs: build
-    if: github.event_name == 'push'
+    needs: [tag, build]
     runs-on: ubuntu-latest
 
     steps:
@@ -103,6 +105,8 @@ jobs:
       - name: Draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.tag.outputs.version }}
+          name: ${{ needs.tag.outputs.version }}
           draft: false           # publish immediately
           prerelease: false
           files: |
