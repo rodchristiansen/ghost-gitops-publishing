@@ -50,6 +50,12 @@ func (s *Service) Rewrite(md []byte, root string) ([]byte, error) {
 	}), nil
 }
 
+// Upload uploads a single file and returns its Ghost CDN URL. It is safe to
+// call multiple times with the same file — results are cached by content hash.
+func (s *Service) Upload(path string) (string, error) {
+	return s.upload(path)
+}
+
 func (s *Service) upload(path string) (string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
