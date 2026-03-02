@@ -24,4 +24,8 @@ go.work.sum
 # env file
 .env
 
+# Mac OS files
 .DS_Store
+
+# IDE specific files
+.vscode/settings.json
