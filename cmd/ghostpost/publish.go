@@ -56,6 +56,19 @@ func publishCmd() *cobra.Command {
 			imgSvc := images.New(cfg.APIURL, cfg.AdminJWT, httpClient)
 			md, _ = imgSvc.Rewrite(md, filepath.Dir(file))
 
+			// If feature_image is a local path, upload it and replace with the Ghost URL.
+			if fi := meta.FeatureImage; fi != "" && !strings.HasPrefix(fi, "http") {
+				local := fi
+				if !filepath.IsAbs(local) {
+					local = filepath.Join(filepath.Dir(file), fi)
+				}
+				if remoteURL, err := imgSvc.Upload(local); err == nil {
+					meta.FeatureImage = remoteURL
+				} else {
+					fmt.Printf("warning: could not upload feature_image %q: %v\n", fi, err)
+				}
+			}
+
 			var html bytes.Buffer
 			if err := goldmark.Convert(md, &html); err != nil {
 				return err
