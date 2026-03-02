@@ -12,7 +12,7 @@ type Post struct {
 	Slug           string      `json:"slug,omitempty"`
 	Status         string      `json:"status,omitempty"`
 	HTML           string      `json:"html"`
-	FeatureImage   string      `json:"feature_image,omitempty"`
+	FeatureImage   *string     `json:"feature_image"`
 	Tags           []tagRef    `json:"tags,omitempty"`
 	CustomExcerpt  string      `json:"custom_excerpt,omitempty"`
 	PublishedAt    string      `json:"published_at,omitempty"`

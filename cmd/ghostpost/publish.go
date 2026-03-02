@@ -69,6 +69,12 @@ func publishCmd() *cobra.Command {
 				}
 			}
 
+			// featureImagePtr: nil sends JSON null (clears Ghost field); pointer sends the URL.
+			var featureImagePtr *string
+			if meta.FeatureImage != "" {
+				featureImagePtr = &meta.FeatureImage
+			}
+
 			var html bytes.Buffer
 			if err := goldmark.Convert(md, &html); err != nil {
 				return err
@@ -121,7 +127,7 @@ func publishCmd() *cobra.Command {
 				Slug:           meta.Slug,
 				Status:         defaultStatus(meta.Status),
 				HTML:           html.String(),
-				FeatureImage:   meta.FeatureImage,
+				FeatureImage:   featureImagePtr,
 				Tags:           api.WrapTags(meta.Tags),
 				CustomExcerpt:  meta.CustomExcerpt,
 				PublishedAt:    meta.PublishedAt,

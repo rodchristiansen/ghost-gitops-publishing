@@ -30,7 +30,6 @@ func Upsert(c *Client, post Post, id string) (string, error) {
 		post.ID = id
 		post.UpdatedAt = current.UpdatedAt // required lock
 		post.Tags = nil                    // leave unchanged
-		post.FeatureImage = ""             // leave unchanged
 
 		if err := c.Put(ctx, "posts/"+id+"/?source=html", postReq{Posts: []Post{post}}, &res); err != nil {
 			return "", err
