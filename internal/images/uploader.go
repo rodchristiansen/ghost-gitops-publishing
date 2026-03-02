@@ -98,7 +98,7 @@ func (s *Service) upload(path string) (string, error) {
 func imageFormWriter(file []byte, body *bytes.Buffer, path string) (*multipart.Writer, error) {
 	w := multipart.NewWriter(body)
 	h := make(textproto.MIMEHeader)
-	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, filepath.Base(path)))
+	h.Set("Content-Disposition", multipart.FileContentDisposition("file", filepath.Base(path)))
 	h.Set("Content-Type", mime.TypeByExtension(filepath.Ext(path)))
 	part, _ := w.CreatePart(h)
 	_, err := io.Copy(part, bytes.NewReader(file))
