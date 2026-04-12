@@ -27,7 +27,8 @@ func main() {
 	}
 
 	root.PersistentFlags().String("api-url", "", "Ghost Admin API base URL (https://blog.example/ghost/api/admin/)")
-	root.PersistentFlags().String("admin-jwt", "", "Admin API JWT")
+	root.PersistentFlags().String("admin-jwt", "", "Admin API JWT or raw Admin API key (id:hexsecret)")
+	root.PersistentFlags().String("api-version", "", "Ghost major version segment for the JWT aud claim (v5, v6). Default: v5.")
 
 	root.AddCommand(publishCmd())
 	root.AddCommand(tagsCmd())

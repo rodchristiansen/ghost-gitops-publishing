@@ -29,6 +29,15 @@ type tagRef struct {
 	Slug string `json:"slug,omitempty"`
 }
 
+// TagRef is the full representation of a tag returned by Ghost's Admin API.
+type TagRef struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Slug        string `json:"slug,omitempty"`
+	Description string `json:"description,omitempty"`
+	Visibility  string `json:"visibility,omitempty"`
+}
+
 type AuthorRef struct {
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`

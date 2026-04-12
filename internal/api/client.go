@@ -8,9 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime/multipart"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -44,6 +44,17 @@ func (c *Client) ListTiers(ctx context.Context) ([]TierRef, error) {
 	return res.Tiers, nil
 }
 
+// ListTags fetches all tags defined on the Ghost site.
+func (c *Client) ListTags(ctx context.Context) ([]TagRef, error) {
+	var res struct {
+		Tags []TagRef `json:"tags"`
+	}
+	if err := c.Get(ctx, "tags/?limit=all", &res); err != nil {
+		return nil, err
+	}
+	return res.Tags, nil
+}
+
 func New(base, jwt string) *Client {
 	return &Client{
 		Base: base,
@@ -64,6 +75,23 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ct
 	return c.hc.Do(req)
 }
 
+// nonJSONError formats a compact error for responses whose body is not JSON
+// (e.g. HTML error pages served by an edge/CDN layer on 5xx). Includes the
+// HTTP status and a short snippet of the body so callers can diagnose without
+// dumping an entire HTML page to the terminal.
+func nonJSONError(res *http.Response, body []byte) error {
+	snippet := bytes.TrimSpace(body)
+	const max = 300
+	if len(snippet) > max {
+		snippet = append(snippet[:max:max], []byte("…")...)
+	}
+	status := http.StatusText(res.StatusCode)
+	if status == "" {
+		status = "unknown"
+	}
+	return fmt.Errorf("ghost API error: %d %s (non-JSON response): %s", res.StatusCode, status, snippet)
+}
+
 func (c *Client) Get(ctx context.Context, path string, out any) error {
 	res, err := c.do(ctx, http.MethodGet, path, nil, "")
 	if err != nil {
@@ -73,7 +101,7 @@ func (c *Client) Get(ctx context.Context, path string, out any) error {
 
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
 		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("ghost API error: %s", bytes.TrimSpace(body))
+		return nonJSONError(res, body)
 	}
 	return json.NewDecoder(res.Body).Decode(out)
 }
@@ -93,7 +121,7 @@ func (c *Client) Post(ctx context.Context, path string, payload any, out any) er
 	c.lastBody = bytes.NewReader(respBody)
 
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
-		return fmt.Errorf("ghost API error: %s", bytes.TrimSpace(respBody))
+		return nonJSONError(res, respBody)
 	}
 	return json.Unmarshal(respBody, out)
 }
@@ -113,13 +141,13 @@ func (c *Client) Put(ctx context.Context, path string, payload any, out any) err
 	c.lastBody = bytes.NewReader(respBody)
 
 	if !strings.HasPrefix(res.Header.Get("Content-Type"), "application/json") {
-		return fmt.Errorf("ghost API error: %s", bytes.TrimSpace(respBody))
+		return nonJSONError(res, respBody)
 	}
 	return json.Unmarshal(respBody, out)
 }
 
 func (c *Client) UploadImage(ctx context.Context, absPath string) (string, error) {
-	f, err := ioutil.ReadFile(absPath)
+	f, err := os.ReadFile(absPath)
 	if err != nil {
 		return "", err
 	}

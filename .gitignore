@@ -29,3 +29,6 @@ go.work.sum
 
 # IDE specific files
 .vscode/settings.json
+
+# Local session files
+cmux.json
