@@ -5,8 +5,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -33,6 +31,7 @@ func defaultStatus(s string) string {
 func publishCmd() *cobra.Command {
 	var file string
 	var openEditor bool
+	var force bool
 
 	cmd := &cobra.Command{
 		Use:   "publish",
@@ -43,12 +42,11 @@ func publishCmd() *cobra.Command {
 				return err
 			}
 
-			// Compute SHA256 digest of Markdown body
-			h := sha256.Sum256(md)
-			nowHash := hex.EncodeToString(h[:])
-
-			// If hash matches, skip publishing
-			if meta.Hash == nowHash {
+			// Hash covers body + all user-editable front-matter so a change
+			// to title/slug/tags/excerpt also triggers a republish, not just
+			// body edits. --force bypasses the check entirely.
+			nowHash := frontmatter.ContentHash(meta, md)
+			if !force && meta.Hash == nowHash {
 				fmt.Println("↻ no changes since last publish, skipping…")
 				return nil
 			}
@@ -187,9 +185,13 @@ func publishCmd() *cobra.Command {
 				meta.Tiers = newTiers
 				dirty = true
 			}
-			// Always update hash after publish
-			if meta.Hash != nowHash {
-				meta.Hash = nowHash
+			// Recompute the hash AFTER Ghost's round-trip has normalized any
+			// fields (published_at, authors, tiers, status) so the stored
+			// hash reflects the final meta — otherwise the next run would
+			// think the file changed and republish unnecessarily.
+			finalHash := frontmatter.ContentHash(meta, md)
+			if meta.Hash != finalHash {
+				meta.Hash = finalHash
 				dirty = true
 			}
 			if dirty {
@@ -212,6 +214,7 @@ func publishCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&file, "file", "f", "", "Markdown file")
 	cmd.MarkFlagRequired("file")
 	cmd.Flags().BoolVarP(&openEditor, "editor", "e", false, "Open post in Ghost editor")
+	cmd.Flags().BoolVar(&force, "force", false, "Bypass the content-hash skip and publish even if nothing appears to have changed")
 	return cmd
 }
 

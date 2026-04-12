@@ -4,6 +4,8 @@ package frontmatter
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 
 	fm "github.com/adrg/frontmatter"
@@ -27,6 +29,23 @@ type Meta struct {
 	Tags           []string `yaml:"tags,omitempty"`
 	PostID         string   `yaml:"post_id,omitempty"` // set after first publish
 	Hash           string   `yaml:"hash,omitempty"`    // SHA256 of Markdown body
+}
+
+// ContentHash returns a SHA256 over the post body and all user-editable
+// front-matter fields. PostID and Hash are excluded because ghostpost writes
+// them itself after publishing (including them would cause a spurious
+// republish every time the round-trip wrote the file back).
+//
+// Any user change to title, slug, tags, excerpt, authors, tiers, etc. will
+// change this hash and trigger a republish on the next publish call.
+func ContentHash(meta Meta, body []byte) string {
+	h := meta
+	h.PostID = ""
+	h.Hash = ""
+	metaBytes, _ := yaml.Marshal(h)
+	combined := append(metaBytes, body...)
+	sum := sha256.Sum256(combined)
+	return hex.EncodeToString(sum[:])
 }
 
 // ParseFile reads a Markdown file and returns its meta + body bytes.
