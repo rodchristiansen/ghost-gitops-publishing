@@ -28,7 +28,9 @@ func main() {
 
 	root.PersistentFlags().String("api-url", "", "Ghost Admin API base URL (https://blog.example/ghost/api/admin/)")
 	root.PersistentFlags().String("admin-jwt", "", "Admin API JWT or raw Admin API key (id:hexsecret)")
-	root.PersistentFlags().String("api-version", "", "Ghost major version segment for the JWT aud claim (v5, v6). Default: v5.")
+	// Flag default is intentionally empty so config-file / env values can
+	// win; the effective default (v5) is supplied by viper in config.Load.
+	root.PersistentFlags().String("api-version", "", "Ghost major version segment for the JWT aud claim, e.g. v5 or v6 (effective default v5, configurable via api_version in ~/.ghostpost/config.yaml)")
 
 	root.AddCommand(publishCmd())
 	root.AddCommand(tagsCmd())
