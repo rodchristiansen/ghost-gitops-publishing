@@ -11,8 +11,10 @@ import (
 )
 
 // FromKey turns Ghost’s “<id>:<secret>” Admin API key
-// into a signed HS256 JWT valid for 10 minutes.
-func FromKey(adminKey, apiURL string) (string, error) {
+// into a signed HS256 JWT valid for 10 minutes. apiVersion is the major
+// version segment Ghost checks in the aud claim (e.g. "v5", "v6"); pass
+// empty string to default to "v5" for backwards compatibility.
+func FromKey(adminKey, apiURL, apiVersion string) (string, error) {
 	parts := strings.SplitN(adminKey, ":", 2)
 	if len(parts) != 2 {
 		return "", nil // not a key, probably an already-signed JWT
@@ -27,8 +29,10 @@ func FromKey(adminKey, apiURL string) (string, error) {
 	iat := time.Now().Unix()
 	exp := iat + 600 // 10 minutes
 
-	// Ghost checks the aud against the major version path
-	aud := "/v5/admin/"
+	if apiVersion == "" {
+		apiVersion = "v5"
+	}
+	aud := "/" + apiVersion + "/admin/"
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"iat": iat,
