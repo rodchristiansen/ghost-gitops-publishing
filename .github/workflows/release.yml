@@ -3,32 +3,65 @@ name: release
 on:
   push:
     branches: ["main"]   # auto-release on every merge to main
+  pull_request:
+    branches: ["main"]   # lint + build on PRs, no release
 
 permissions:
   contents: write  # needed for creating tags and uploading release assets
 
+# Serialize release runs on main so two merges within the same minute can't
+# race on the same date-based tag. PRs cancel in-progress builds on new pushes
+# so stale CI runs don't waste compute.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  tag:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: gofmt
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "::error::Files are not gofmt'd:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+  # Compute the release version once, up front. On push: date-based tag.
+  # On PR: pr-<number> so diagnostic logs still show a meaningful version
+  # baked into the binary even though nothing gets tagged or released.
+  version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.gen.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Generate date-based version tag
-        id: gen
+      - id: gen
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          VERSION=$(date -u +"%Y.%m.%d.%H%M")
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$VERSION"
-          git push origin "$VERSION"
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
+            echo "version=$(date -u +'%Y.%m.%d.%H%M')" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=pr-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
-    needs: tag
+    needs: [lint, version]
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -66,47 +99,69 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.26"
+          go-version-file: go.mod
+          check-latest: true
 
       - name: Build
         env:
           CGO_ENABLED: 0
           GOOS:   ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.version.outputs.version }}
+          EXT: ${{ matrix.ext }}
+          ARCHIVE: ${{ matrix.archive }}
         run: |
-          VERSION="${{ needs.tag.outputs.version }}"
-          out="ghostpost${{ matrix.ext }}"
+          out="ghostpost${EXT}"
           dir="ghostpost-${GOOS}-${GOARCH}"
           mkdir -p "$dir"
           go build -ldflags="-s -w -X main.version=${VERSION}" -o "$dir/$out" ./cmd/ghostpost
           # compress
-          if [ "${{ matrix.archive }}" = "zip" ]; then
+          if [ "$ARCHIVE" = "zip" ]; then
             zip -r "${dir}.zip" "$dir"
           else
             tar -czf "${dir}.tar.gz" "$dir"
           fi
 
       - name: Upload artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: ghostpost-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ghostpost-${{ matrix.goos }}-${{ matrix.goarch }}*.${{ matrix.archive }}
 
-  release:
-    needs: [tag, build]
+  # Tag only after every build has succeeded. Previously the tag was created
+  # up front, so a build failure left a dangling tag pointing at a commit
+  # with no associated release.
+  tag:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [version, build]
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Push release tag
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "$VERSION"
 
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [version, tag, build]
+    runs-on: ubuntu-latest
     steps:
       - name: Download all build artifacts
         uses: actions/download-artifact@v4
         with:
           path: dist/
 
-      - name: Draft GitHub Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.tag.outputs.version }}
-          name: ${{ needs.tag.outputs.version }}
+          tag_name: ${{ needs.version.outputs.version }}
+          name: ${{ needs.version.outputs.version }}
           draft: false           # publish immediately
           prerelease: false
           files: |
